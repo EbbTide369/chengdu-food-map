@@ -59,8 +59,12 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
 .info-window .nav-link { display:inline-block; margin-top:6px; padding:4px 12px; background:#FF8C00; color:#fff; border-radius:4px; text-decoration:none; font-size:12px; cursor:pointer; }
 .info-window .nav-link:hover { background:#e67e00; }
 .info-window .nav-link + .nav-link { margin-left:6px; }
-.user-position-dot { width:18px; height:18px; border:3px solid white; border-radius:50%; background:#1689e8; box-shadow:0 0 0 7px rgba(22,137,232,.2),0 2px 8px rgba(0,0,0,.5); }
+.user-position { display:flex; align-items:center; gap:7px; white-space:nowrap; }
+.user-position-dot { width:18px; height:18px; flex:none; border:3px solid white; border-radius:50%; background:#1689e8; box-shadow:0 0 0 7px rgba(22,137,232,.2),0 2px 8px rgba(0,0,0,.5); }
+.user-position-text { padding:4px 7px; border:1px solid #1689e8; border-radius:6px; background:white; color:#135c94; font-size:12px; font-weight:700; box-shadow:0 2px 8px rgba(0,0,0,.25); }
 #map-locate-btn { display:none; position:absolute; top:10px; right:10px; z-index:200; background:#1a1a2e; color:#fff; border:1px solid #3a3a5a; border-radius:8px; padding:10px 12px; font-size:13px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.4); }
+#recenter-btn { position:absolute; top:10px; right:10px; z-index:200; background:#1a1a2e; color:#fff; border:1px solid #3a3a5a; border-radius:8px; padding:10px 12px; font-size:13px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.4); }
+#recenter-btn[hidden] { display:none; }
 #close-sidebar-btn { display:none; }
 
 .amap-info-content { color:#fff !important; background:#1e1e36 !important; border:1px solid #3a3a5a !important; }
@@ -70,7 +74,8 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
   #sidebar.open { transform:translateX(0); }
   #toggle-btn { display:block; }
   #map-locate-btn, #close-sidebar-btn { display:block; }
-  #sidebar.open ~ #map-container #toggle-btn, #sidebar.open ~ #map-container #map-locate-btn { display:none; }
+  #recenter-btn { top:55px; }
+  #sidebar.open ~ #map-container #toggle-btn, #sidebar.open ~ #map-container #map-locate-btn, #sidebar.open ~ #map-container #recenter-btn { display:none; }
   #close-sidebar-btn { float:right; border:0; background:transparent; color:#fff; font-size:24px; line-height:20px; cursor:pointer; }
 }
 </style>
@@ -115,6 +120,7 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
   <div id="map-container">
     <button id="toggle-btn" type="button" aria-label="打开餐馆列表">☰</button>
     <button id="map-locate-btn" type="button">📍 附近</button>
+    <button id="recenter-btn" type="button" hidden>🎯 跟随位置</button>
     <div id="map"></div>
   </div>
 </div>
@@ -129,6 +135,9 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
   var map;
   var markers = [];
   var markerVisible = [];
+  var labelMarkers = [];
+  var labelDisplayNames = [];
+  var labelsLayer = null;
   var activeCategories = new Set(CATS.map(function(cat) { return cat.id; }));
   var activeInfoWindow = null;
   var activePoiIndex = null;
@@ -136,6 +145,8 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
   var userMarker = null;
   var accuracyCircle = null;
   var watchId = null;
+  var followLocation = false;
+  var locationError = null;
   var nearbyOnly = false;
   var radiusMeters = 3000;
 
@@ -169,6 +180,13 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
       resizeEnable: true,
       viewMode: '3D'
     });
+    labelsLayer = new AMap.LabelsLayer({
+      zooms: [11, 20],
+      zIndex: 150,
+      collision: true,
+      allowCollision: false
+    });
+    map.add(labelsLayer);
 
     POIS.forEach(function(poi, index) {
       var marker = new AMap.Marker({
@@ -187,7 +205,17 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
       marker.setMap(map);
       markers[index] = marker;
       markerVisible[index] = true;
+      var labelMarker = new AMap.LabelMarker({
+        name: poi.name,
+        position: coordinates(poi),
+        rank: 1,
+        text: labelTextOptions(shortLabel(poi.name, map.getZoom()))
+      });
+      labelMarker.on('click', function() { openPOI(index); });
+      labelMarkers[index] = labelMarker;
+      labelDisplayNames[index] = shortLabel(poi.name, map.getZoom());
     });
+    labelsLayer.add(labelMarkers);
 
     document.getElementById('mapStats').textContent = POIS.length + '家精选 · ' + CATS.length + '大区域 · 交互地图';
     CATS.forEach(function(cat) {
@@ -213,6 +241,10 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
     });
     document.getElementById('locateBtn').addEventListener('click', activateNearby);
     document.getElementById('map-locate-btn').addEventListener('click', activateNearby);
+    document.getElementById('recenter-btn').addEventListener('click', function() {
+      centerOnUser();
+      if (watchId === null) startTracking();
+    });
     document.getElementById('stopBtn').addEventListener('click', stopTracking);
     document.getElementById('allBtn').addEventListener('click', function() { setMode(false); });
     document.getElementById('nearbyBtn').addEventListener('click', function() { setMode(true); });
@@ -221,13 +253,57 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
     map.on('click', function() {
       if (window.innerWidth <= 768) toggleSidebar(false);
     });
+    map.on('dragstart', function() {
+      if (userPosition) {
+        followLocation = false;
+        updateFollowControl();
+      }
+    });
+    map.on('zoomend', updateMapLabels);
     renderNotFound();
     render();
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then(function(permission) {
+        if (permission.state === 'granted' && watchId === null) startTracking();
+      }).catch(function() {});
+    }
   }
 
   function markerSVG(color) {
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="COLOR" stroke="#fff" stroke-width="1.5" opacity="0.9"/><circle cx="11" cy="11" r="4" fill="#fff" opacity="0.3"/></svg>';
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.replace('COLOR', color));
+  }
+
+  function shortLabel(name, zoom) {
+    var limit = zoom >= 16 ? Infinity : zoom >= 14 ? 15 : 9;
+    var characters = Array.from(name);
+    return characters.length > limit ? characters.slice(0, limit - 1).join('') + '…' : name;
+  }
+
+  function labelTextOptions(content) {
+    return {
+      content: content,
+      direction: 'right',
+      offset: [11, 0],
+      style: {
+        fontSize: 12,
+        fillColor: '#202633',
+        strokeColor: '#ffffff',
+        strokeWidth: 3,
+        padding: [1, 2]
+      }
+    };
+  }
+
+  function updateMapLabels() {
+    var zoom = map.getZoom();
+    labelMarkers.forEach(function(marker, index) {
+      var content = shortLabel(POIS[index].name, zoom);
+      if (content !== labelDisplayNames[index]) {
+        marker.setText(labelTextOptions(content));
+        labelDisplayNames[index] = content;
+      }
+    });
   }
 
   function getVisibleEntries() {
@@ -252,6 +328,8 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
       var shouldShow = visible.has(index);
       if (shouldShow !== markerVisible[index]) {
         marker.setMap(shouldShow ? map : null);
+        if (shouldShow) labelsLayer.add(labelMarkers[index]);
+        else labelsLayer.remove(labelMarkers[index]);
         markerVisible[index] = shouldShow;
       }
     });
@@ -337,6 +415,8 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
   }
 
   function openPOI(index) {
+    followLocation = false;
+    updateFollowControl();
     var poi = POIS[index];
     var position = coordinates(poi);
     var content = document.createElement('div');
@@ -398,12 +478,14 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
   }
 
   function setStatus(message, isError) {
+    locationError = isError ? message : null;
     var status = document.getElementById('locationStatus');
     status.textContent = message;
     status.classList.toggle('error', !!isError);
   }
 
   function updateLocationStatus(count) {
+    if (locationError) return;
     var suffix = watchId === null ? '已暂停实时更新' : '实时定位中';
     var precision = userPosition.accuracy ? ' · 精度约 ' + formatDistance(userPosition.accuracy) : '';
     var nearby = nearbyOnly ? ' · 范围内 ' + count + ' 家' : '';
@@ -447,12 +529,19 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
       userPosition = [converted.getLng(), converted.getLat()];
       userPosition.accuracy = position.coords.accuracy;
       updateUserMarker();
+      updateFollowControl();
       document.getElementById('nearbyBtn').disabled = false;
       document.getElementById('locateBtn').textContent = '🎯 回到我的位置';
       if (firstFix) {
         setMode(true);
         centerOnUser();
       } else {
+        if (followLocation) {
+          var center = map.getCenter();
+          if (distanceMeters([center.getLng(), center.getLat()], userPosition) > 50) {
+            map.panTo(userPosition);
+          }
+        }
         render();
       }
     });
@@ -462,9 +551,9 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
     if (!userMarker) {
       userMarker = new AMap.Marker({
         position: userPosition,
-        content: '<div class="user-position-dot" title="我的位置"></div>',
+        content: '<div class="user-position" title="我的位置"><span class="user-position-dot"></span><span class="user-position-text">我的位置</span></div>',
         offset: new AMap.Pixel(-9, -9),
-        zIndex: 1000
+        zIndex: 2000
       });
       userMarker.setMap(map);
     } else {
@@ -488,13 +577,24 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
 
   function centerOnUser() {
     if (!userPosition) return;
+    followLocation = true;
     map.setZoom(15);
     map.setCenter(userPosition);
+    updateFollowControl();
+  }
+
+  function updateFollowControl() {
+    var button = document.getElementById('recenter-btn');
+    button.hidden = !userPosition;
+    button.textContent = followLocation && watchId !== null ? '🎯 跟随中' : '🎯 回到我';
+    button.setAttribute('aria-pressed', String(followLocation && watchId !== null));
   }
 
   function onLocationError(error) {
     if (watchId !== null) navigator.geolocation.clearWatch(watchId);
     watchId = null;
+    followLocation = false;
+    updateFollowControl();
     document.getElementById('stopBtn').hidden = true;
     document.getElementById('locateBtn').textContent = userPosition ? '📍 重新定位' : '📍 定位并找附近';
     var messages = {
@@ -508,6 +608,8 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
   function stopTracking() {
     if (watchId !== null) navigator.geolocation.clearWatch(watchId);
     watchId = null;
+    followLocation = false;
+    updateFollowControl();
     document.getElementById('stopBtn').hidden = true;
     document.getElementById('locateBtn').textContent = '📍 继续实时定位';
     if (userPosition) render();
