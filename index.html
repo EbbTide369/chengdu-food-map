@@ -22,16 +22,34 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
 .search-box { padding:8px 16px; border-bottom:1px solid #2a2a4a; }
 .search-box input { width:100%; padding:8px 12px; border-radius:6px; border:none; background:#2a2a4a; color:#e0e0e0; font-size:13px; outline:none; }
 .search-box input::placeholder { color:#666; }
+.nearby-panel { padding:12px 16px; border-bottom:1px solid #2a2a4a; }
+.nearby-actions { display:flex; gap:8px; }
+.nearby-actions button, .view-switch button, .radius-select { border:1px solid #4a4a6a; border-radius:7px; background:#2a2a4a; color:#eee; font-size:12px; cursor:pointer; }
+#locateBtn { flex:1; padding:9px 8px; background:#2175a9; border-color:#3389bd; font-weight:600; }
+#locateBtn:hover { background:#2988c2; }
+#stopBtn { padding:9px 8px; }
+#stopBtn[hidden] { display:none; }
+.nearby-options { display:flex; align-items:center; gap:8px; margin-top:9px; }
+.radius-select { padding:7px; flex:1; min-width:0; }
+.view-switch { display:flex; gap:4px; }
+.view-switch button { padding:7px 9px; }
+.view-switch button.active { color:#fff; background:#bd640b; border-color:#d47a20; }
+.view-switch button:disabled { opacity:.45; cursor:not-allowed; }
+.location-status { color:#aeb8c9; font-size:11px; line-height:1.45; margin-top:8px; min-height:16px; }
+.location-status.error { color:#ff9b91; }
+.nearby-heading { padding:10px 16px 4px; font-size:13px; font-weight:600; color:#aaa; }
 .poi-list { flex:1; overflow-y:auto; padding:8px 0; }
 .poi-list::-webkit-scrollbar { width:4px; }
 .poi-list::-webkit-scrollbar-thumb { background:#3a3a5a; border-radius:2px; }
 .cat-section { margin-bottom:4px; }
 .cat-header { padding:10px 16px 4px; font-size:13px; font-weight:600; color:#aaa; }
-.poi-item { padding:8px 16px 8px 24px; font-size:13px; cursor:pointer; display:flex; align-items:center; transition:background 0.15s; color:#ccc; }
+.poi-item { width:100%; border:0; background:transparent; text-align:left; padding:8px 16px 8px 24px; font-size:13px; cursor:pointer; display:flex; align-items:center; transition:background 0.15s; color:#ccc; font-family:inherit; }
 .poi-item:hover { background:#2a2a4a; color:#fff; }
 .poi-item.active { background:#3a2a1a; color:#FF8C00; }
 .poi-item .poi-icon { margin-right:8px; font-size:14px; }
-.poi-item .poi-name { flex:1; }
+.poi-item .poi-name { flex:1; min-width:0; }
+.poi-item .poi-distance { margin-left:8px; color:#90c9e8; white-space:nowrap; font-size:11px; }
+.poi-item .poi-detail { display:block; font-size:11px; color:#888; margin-top:2px; }
 .not-found-section { padding:8px 16px; border-top:1px solid #2a2a4a; font-size:12px; color:#666; }
 .not-found-section h3 { font-size:12px; margin-bottom:4px; color:#888; }
 .not-found-item { padding:2px 0; }
@@ -40,13 +58,20 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
 .info-window h3 { font-size:14px; margin-bottom:4px; }
 .info-window .nav-link { display:inline-block; margin-top:6px; padding:4px 12px; background:#FF8C00; color:#fff; border-radius:4px; text-decoration:none; font-size:12px; cursor:pointer; }
 .info-window .nav-link:hover { background:#e67e00; }
+.info-window .nav-link + .nav-link { margin-left:6px; }
+.user-position-dot { width:18px; height:18px; border:3px solid white; border-radius:50%; background:#1689e8; box-shadow:0 0 0 7px rgba(22,137,232,.2),0 2px 8px rgba(0,0,0,.5); }
+#map-locate-btn { display:none; position:absolute; top:10px; right:10px; z-index:200; background:#1a1a2e; color:#fff; border:1px solid #3a3a5a; border-radius:8px; padding:10px 12px; font-size:13px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.4); }
+#close-sidebar-btn { display:none; }
 
 .amap-info-content { color:#fff !important; background:#1e1e36 !important; border:1px solid #3a3a5a !important; }
 
 @media (max-width:768px) {
-  #sidebar { position:absolute; left:0; top:0; width:300px; min-width:300px; transform:translateX(-300px); }
+  #sidebar { position:absolute; left:0; top:0; width:min(340px,88vw); min-width:0; transform:translateX(-100%); }
   #sidebar.open { transform:translateX(0); }
   #toggle-btn { display:block; }
+  #map-locate-btn, #close-sidebar-btn { display:block; }
+  #sidebar.open ~ #map-container #toggle-btn, #sidebar.open ~ #map-container #map-locate-btn { display:none; }
+  #close-sidebar-btn { float:right; border:0; background:transparent; color:#fff; font-size:24px; line-height:20px; cursor:pointer; }
 }
 </style>
 </head>
@@ -55,224 +80,463 @@ html, body { height:100%; overflow:hidden; font-family: -apple-system, BlinkMacS
 <div id="container">
   <div id="sidebar">
     <div class="sidebar-header">
+      <button id="close-sidebar-btn" type="button" aria-label="关闭列表">×</button>
       <h1>🌶️ 成都美食攻略</h1>
       <div class="subtitle" id="mapStats"></div>
     </div>
     <div class="legend" id="legend">
-      <div class="legend-item" data-cat="青羊区" onclick="toggleCategory('青羊区')"><span class="legend-dot" style="background:#E74C3C"></span>🏛️ 青羊区<span class="legend-count" id="count-青羊区"></span></div><div class="legend-item" data-cat="武侯区" onclick="toggleCategory('武侯区')"><span class="legend-dot" style="background:#27AE60"></span>🌿 武侯区<span class="legend-count" id="count-武侯区"></span></div><div class="legend-item" data-cat="金牛区" onclick="toggleCategory('金牛区')"><span class="legend-dot" style="background:#F39C12"></span>🐂 金牛区<span class="legend-count" id="count-金牛区"></span></div><div class="legend-item" data-cat="锦江区" onclick="toggleCategory('锦江区')"><span class="legend-dot" style="background:#2980B9"></span>💧 锦江区<span class="legend-count" id="count-锦江区"></span></div><div class="legend-item" data-cat="成华区" onclick="toggleCategory('成华区')"><span class="legend-dot" style="background:#8E44AD"></span>🏭 成华区<span class="legend-count" id="count-成华区"></span></div><div class="legend-item" data-cat="高新" onclick="toggleCategory('高新')"><span class="legend-dot" style="background:#3498DB"></span>🏙️ 高新区<span class="legend-count" id="count-高新"></span></div><div class="legend-item" data-cat="双流" onclick="toggleCategory('双流')"><span class="legend-dot" style="background:#1ABC9C"></span>✈️ 双流区<span class="legend-count" id="count-双流"></span></div><div class="legend-item" data-cat="乐山" onclick="toggleCategory('乐山')"><span class="legend-dot" style="background:#FF4500"></span>🔥 乐山<span class="legend-count" id="count-乐山"></span></div>
+      <div class="legend-item" data-cat="青羊区"><span class="legend-dot" style="background:#E74C3C"></span>🏛️ 青羊区<span class="legend-count" id="count-青羊区"></span></div><div class="legend-item" data-cat="武侯区"><span class="legend-dot" style="background:#27AE60"></span>🌿 武侯区<span class="legend-count" id="count-武侯区"></span></div><div class="legend-item" data-cat="金牛区"><span class="legend-dot" style="background:#F39C12"></span>🐂 金牛区<span class="legend-count" id="count-金牛区"></span></div><div class="legend-item" data-cat="锦江区"><span class="legend-dot" style="background:#2980B9"></span>💧 锦江区<span class="legend-count" id="count-锦江区"></span></div><div class="legend-item" data-cat="成华区"><span class="legend-dot" style="background:#8E44AD"></span>🏭 成华区<span class="legend-count" id="count-成华区"></span></div><div class="legend-item" data-cat="高新"><span class="legend-dot" style="background:#3498DB"></span>🏙️ 高新区<span class="legend-count" id="count-高新"></span></div><div class="legend-item" data-cat="双流"><span class="legend-dot" style="background:#1ABC9C"></span>✈️ 双流区<span class="legend-count" id="count-双流"></span></div><div class="legend-item" data-cat="乐山"><span class="legend-dot" style="background:#FF4500"></span>🔥 乐山<span class="legend-count" id="count-乐山"></span></div>
     </div>
     <div class="search-box">
-      <input type="text" id="searchInput" placeholder="🔍 搜索店铺名称…" oninput="filterPOIs()">
+      <input type="search" id="searchInput" placeholder="🔍 搜索店铺名称或地址…" aria-label="搜索店铺名称或地址">
+    </div>
+    <div class="nearby-panel">
+      <div class="nearby-actions">
+        <button id="locateBtn" type="button">📍 定位并找附近</button>
+        <button id="stopBtn" type="button" hidden>暂停更新</button>
+      </div>
+      <div class="nearby-options">
+        <select id="radiusSelect" class="radius-select" aria-label="附近查找范围">
+          <option value="1000">1 公里内</option>
+          <option value="3000" selected>3 公里内</option>
+          <option value="5000">5 公里内</option>
+          <option value="all">不限距离</option>
+        </select>
+        <div class="view-switch" aria-label="列表模式">
+          <button id="allBtn" type="button" class="active" aria-pressed="true">全部</button>
+          <button id="nearbyBtn" type="button" aria-pressed="false" disabled>附近</button>
+        </div>
+      </div>
+      <div id="locationStatus" class="location-status" role="status" aria-live="polite">点击定位后，将按直线距离显示附近餐馆。</div>
     </div>
     <div class="poi-list" id="poiList"></div>
     <div class="not-found-section" id="notFoundSection"></div>
   </div>
   <div id="map-container">
-    <button id="toggle-btn" onclick="toggleSidebar()">☰</button>
+    <button id="toggle-btn" type="button" aria-label="打开餐馆列表">☰</button>
+    <button id="map-locate-btn" type="button">📍 附近</button>
     <div id="map"></div>
   </div>
 </div>
 
-<script src="https://webapi.amap.com/maps?v=2.0&key=01ca0c30a26db0ec367b121afdf640fc&plugin=AMap.Geocoder"</script>
-<script>window._AMapSecurityConfig = { securityJsCode: '36756707db46ab35b7238da23387bf2b' };></script>
+<script>window._AMapSecurityConfig = { securityJsCode: '36756707db46ab35b7238da23387bf2b' };</script>
+<script src="https://webapi.amap.com/maps?v=2.0&key=01ca0c30a26db0ec367b121afdf640fc"></script>
 <script>const POIS = [{"name": "五妹朱记肥肠粉", "address": "成都市青羊区实业街28号附2号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.0555,30.6685", "formatted": "四川省成都市青羊区实业街28号附2号"}, {"name": "包家兄弟牛肉饭店", "address": "成都市包家巷81号附24号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.052254,30.658122", "formatted": "成都市包家巷81号附24号"}, {"name": "包家巷82号", "address": "成都市包家巷", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.051531,30.658351", "formatted": "四川省成都市青羊区包家巷"}, {"name": "大碗面", "address": "成都市东城根下街63号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.060136,30.668776", "formatted": "四川省成都市青羊区东城根下街63号"}, {"name": "夫妻肺片", "address": "成都市长顺街", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.051709,30.667614", "formatted": "四川省成都市青羊区长顺街"}, {"name": "小谭豆花面", "address": "成都市西大街86号附13号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.055793,30.673330", "formatted": "四川省成都市青羊区西大街86号"}, {"name": "巷巷面", "address": "成都市斌升街22号附11号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.058634,30.661732", "formatted": "四川省成都市青羊区斌升街22号附11号"}, {"name": "无名冒菜", "address": "成都市西二道街19号附1号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.0530,30.6705", "formatted": "四川省成都市青羊区西二道街19号附1号"}, {"name": "昭德肺片", "address": "成都市青羊区红墙巷", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.0690,30.6680", "formatted": "四川省成都市青羊区红墙巷"}, {"name": "杨伯英传统杂酱面", "address": "成都市铜丝街19号附13号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.078023,30.669387", "formatted": "四川省成都市青羊区铜丝街19号"}, {"name": "查渣面长顺店", "address": "成都市青羊区长顺下街65号附3号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.056,30.665", "formatted": "四川省成都市青羊区长顺下街65号附3号"}, {"name": "柿子书院", "address": "成都市宽窄巷子柿子巷", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.055180,30.663213", "formatted": "四川省成都市青羊区宽窄巷子"}, {"name": "淳香阁", "address": "成都市西华门街7号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.062457,30.659687", "formatted": "四川省成都市青羊区西华门街7号"}, {"name": "皇城老妈火锅", "address": "成都市琴台路", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.045120,30.658964", "formatted": "四川省成都市青羊区琴台路"}, {"name": "纯阳馆鱼香排骨面(吉祥街店)", "address": "成都市吉祥街8号附2号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.054804,30.668202", "formatted": "成都市吉祥街8号附2号"}, {"name": "老号鱿鱼面", "address": "成都市长顺上街100号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.056777,30.662982", "formatted": "四川省成都市青羊区长顺上街100号"}, {"name": "老地方鳝鱼面", "address": "成都市柵子街28号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.054884,30.667045", "formatted": "四川省成都市青羊区栅子街28号"}, {"name": "老成都三样面", "address": "成都市过街楼街46号附6号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.058999,30.669753", "formatted": "四川省成都市青羊区过街楼街46号附6号"}, {"name": "老院坝杂酱面", "address": "成都市吉祥街27号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.054395,30.668688", "formatted": "四川省成都市青羊区吉祥街27号"}, {"name": "轩轩小院", "address": "成都市宽窄巷子", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.055180,30.663213", "formatted": "四川省成都市青羊区宽窄巷子"}, {"name": "达伍德清真火锅", "address": "成都市青羊区仁厚街", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.0560,30.6640", "formatted": "四川省成都市青羊区仁厚街"}, {"name": "银树饺子", "address": "成都市青羊区方池街8号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.0580,30.6630", "formatted": "四川省成都市青羊区方池街8号"}, {"name": "雷祖芳老妈蹄花", "address": "成都市青羊区陕西街143号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.0620,30.6550", "formatted": "四川省成都市青羊区陕西街143号"}, {"name": "青羊宫", "address": "成都市青羊区", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.041311,30.660941", "formatted": "四川省成都市青羊区青羊宫"}, {"name": "马王庙刀削面", "address": "成都市马王庙街21号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.076726,30.667009", "formatted": "四川省成都市青羊区马王庙街21号"}, {"name": "乐山鲜知味钵钵鸡", "address": "成都市草堂北路16号附18号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.029516,30.666428", "formatted": "成都市草堂北路16号附18号"}, {"name": "麻肚肚面", "address": "成都市长富新城", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.055,30.666", "formatted": "四川省成都市青羊区长富新城"}, {"name": "龙森园火锅", "address": "成都市琴台路", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.045120,30.658964", "formatted": "四川省成都市青羊区琴台路"}, {"name": "万三面馆", "address": "成都市金陵横街89号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.062760,30.635666", "formatted": "四川省成都市武侯区金陵横街89号"}, {"name": "乡村钵钵鸡", "address": "成都市郭家桥北街10号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.083720,30.624384", "formatted": "四川省成都市武侯区郭家桥北街10号3号"}, {"name": "孙记三碗饺", "address": "成都市武侯区玉林生活广场", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.055,30.628", "formatted": "四川省成都市武侯区玉林生活广场"}, {"name": "廖德胜家常面", "address": "成都市广福桥街30号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.036100,30.637269", "formatted": "四川省成都市武侯区广福桥街30号"}, {"name": "永记汤圆面馆", "address": "成都市武侯区武侯祠东街13号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.048,30.643", "formatted": "四川省成都市武侯区武侯祠东街13号"}, {"name": "沈堂甜水面", "address": "成都市芳草街新能巷2号附5号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.054602,30.631909", "formatted": "四川省成都市武侯区芳草街新能巷2号附5号"}, {"name": "浮生咖啡", "address": "成都市肖家河崇德园", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.040340,30.630646", "formatted": "四川省成都市武侯区肖家河崇德园"}, {"name": "玉滋補", "address": "成都市玉洁巷2号附1号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.060067,30.624404", "formatted": "四川省成都市武侯区玉洁巷2号附1号"}, {"name": "王婆荞面", "address": "成都市玉林南路13号附14号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.057739,30.621304", "formatted": "四川省成都市武侯区玉林南路13号附14号"}, {"name": "瓷碗面", "address": "成都市高朋西路500号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.033793,30.622869", "formatted": "四川省成都市武侯区高朋西路500号"}, {"name": "肖家河家常面", "address": "成都市肖家河北街8号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.044575,30.633097", "formatted": "四川省成都市武侯区肖家河北街8号"}, {"name": "莽子油泼面", "address": "成都市武侯区芳草街", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.048,30.630", "formatted": "四川省成都市武侯区芳草街"}, {"name": "贵阳原窝儿肠旺面", "address": "成都市武侯区航空路", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.072,30.620", "formatted": "四川省成都市武侯区航空路"}, {"name": "迦入空间", "address": "成都市高升桥", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.040849,30.639660", "formatted": "四川省成都市武侯区高升桥"}, {"name": "重庆花街子小面", "address": "成都市广福桥横街10号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.034082,30.639701", "formatted": "四川省成都市武侯区广福桥横街10号"}, {"name": "陕西biangbiang面", "address": "成都市广和一街166号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.065,30.608", "formatted": "四川省成都市武侯区广和一街166号"}, {"name": "陕西风味小吃", "address": "成都市红牌楼北街25号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.037739,30.632911", "formatted": "四川省成都市武侯区红牌楼北街25号"}, {"name": "食拾碗", "address": "成都市玉林南路5号附36号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.058922,30.623052", "formatted": "四川省成都市武侯区玉林南路5号附36号"}, {"name": "七爷老成都泡椒牛肉面", "address": "成都市五丁路16号附12号", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.066393,30.684200", "formatted": "四川省成都市金牛区五丁路16号附12号"}, {"name": "八宝海味", "address": "成都市三洞桥路12号", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.049738,30.674737", "formatted": "四川省成都市金牛区三洞桥路12号"}, {"name": "北京老前门烤鸭", "address": "成都市永陵路", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.045962,30.671990", "formatted": "四川省成都市金牛区永陵路"}, {"name": "带江草堂邹鲢鱼", "address": "成都市", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.047775,30.672227", "formatted": "四川省成都市金牛区邹鲢鱼(永陵店)"}, {"name": "李九如聚丰园", "address": "成都市长兴街5号附3", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.041310,30.708747", "formatted": "四川省成都市金牛区长兴街5号附3号"}, {"name": "浙江次坞打面", "address": "成都市长青路58号", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.041094,30.709932", "formatted": "四川省成都市金牛区长青路58号"}, {"name": "清真成都第一家资格烤羊肉串", "address": "成都市抚琴街南一巷与抚琴西南街交叉口西南角", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.038657,30.678467", "formatted": "四川省成都市金牛区抚琴街与抚琴西南街"}, {"name": "蓉荣北大铺盖面", "address": "成都市解放路二段2号附4号", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.079228,30.676825", "formatted": "四川省成都市金牛区解放路二段2号附4号"}, {"name": "袁孃孃面馆", "address": "成都市金牛区曹家巷工人村", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.078,30.675", "formatted": "四川省成都市金牛区曹家巷工人村"}, {"name": "黑竹香鸡(西门店)", "address": "成都市营和巷40号", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.03704,30.68108", "formatted": "成都市营和巷40号"}, {"name": "三雅面馆", "address": "成都市工农院街80号附10号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.099382,30.630098", "formatted": "四川省成都市锦江区工农院街80号附10号"}, {"name": "刘三姐陕西手工面", "address": "成都市冻青树街38号附4号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.079366,30.663776", "formatted": "四川省成都市锦江区冻青树街38号附4号"}, {"name": "华兴街自力面店", "address": "成都市华兴东街63号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.081237,30.658598", "formatted": "四川省成都市锦江区华兴东街63号"}, {"name": "吴记怪味面", "address": "成都市一环路东五段108号附11号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.093260,30.642453", "formatted": "四川省成都市锦江区一环路东五段108-附3号"}, {"name": "巷巷面(书院)", "address": "成都市书院西街62号院附31号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.085772,30.658645", "formatted": "四川省成都市锦江区书院西街62号院附31号"}, {"name": "牛王庙老号全欣面店", "address": "成都市福字街8号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.087445,30.655896", "formatted": "四川省成都市锦江区福字街8号"}, {"name": "眼哥素椒面", "address": "成都市桂王桥南街1号附2号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.082677,30.662230", "formatted": "四川省成都市锦江区桂王桥南街1号附2号"}, {"name": "竹记制面铺", "address": "成都市锦江区一心桥南街194号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.095,30.650", "formatted": "四川省成都市锦江区一心桥南街194号"}, {"name": "坎上坎毛豆蹄花", "address": "成都市三友路", "category": "成华区", "icon": "🏭", "color": "#8E44AD", "lnglat": "104.092221,30.684623", "formatted": "四川省成都市成华区三友路"}, {"name": "肆贰零刀削面", "address": "成都市成华区双桥路149号附8号", "category": "成华区", "icon": "🏭", "color": "#8E44AD", "lnglat": "104.105,30.652", "formatted": "四川省成都市成华区双桥路149号附8号"}, {"name": "茉小馆", "address": "成都市猛追湾街99号", "category": "成华区", "icon": "🏭", "color": "#8E44AD", "lnglat": "104.094317,30.670565", "formatted": "四川省成都市成华区猛追湾街99号"}, {"name": "三叔面", "address": "成都市城隍庙街33号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.089658,30.664550", "formatted": "四川省成都市锦江区城隍庙街33号"}, {"name": "三小邹氏烧烤", "address": "乐山市峨眉山市", "category": "乐山", "icon": "🔥", "color": "#FF4500", "lnglat": "103.484557,29.601189", "formatted": "四川省乐山市峨眉山市"}, {"name": "古记咔饼", "address": "乐山市峨眉山市", "category": "乐山", "icon": "🔥", "color": "#FF4500", "lnglat": "103.484557,29.601189", "formatted": "四川省乐山市峨眉山市"}, {"name": "合和会食肆", "address": "成都市玉皇观街1号附6号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.088743,30.665029", "formatted": "四川省成都市锦江区玉皇观街1号附6号"}, {"name": "吉星烧烤", "address": "乐山市夹江县", "category": "乐山", "icon": "🔥", "color": "#FF4500", "lnglat": "103.571313,29.738143", "formatted": "四川省乐山市夹江县"}, {"name": "周琴老面馆(神仙树店)", "address": "成都市神仙树北路25号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.048119,30.618556", "formatted": "成都市神仙树北路25号"}, {"name": "国保兰州牛肉面", "address": "成都市橡树林东路44号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.093893,30.623004", "formatted": "四川省成都市锦江区橡树林东路44号"}, {"name": "永乐饭店", "address": "成都市肖家河中街32号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.043627,30.630838", "formatted": "成都市肖家河中街32号"}, {"name": "涂记鸡汤铺盖面", "address": "成都市汪家拐横小南街2号附3号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.055615,30.659487", "formatted": "四川省成都市青羊区汪家拐横小南街2号附3号"}, {"name": "眼镜油烫甜皮鸭", "address": "乐山市牛华镇", "category": "乐山", "icon": "🔥", "color": "#FF4500", "lnglat": "103.802914,29.464398", "formatted": "四川省乐山市五通桥区牛华镇"}, {"name": "老文庙干贝大抄手", "address": "成都市文庙前街50号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.061113,30.650119", "formatted": "四川省成都市青羊区文庙前街50号"}, {"name": "老爹兔头", "address": "成都市桐凤路65号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.062744,30.618898", "formatted": "四川省成都市武侯区桐凤路65号"}, {"name": "豆瓣面·泡豇豆鱼臊面", "address": "成都市鼓楼南街180号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.072323,30.663265", "formatted": "四川省成都市青羊区鼓楼南街180号"}, {"name": "姐弟豆花面", "address": "成都市东校场街4号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.091277,30.666132", "formatted": "四川省成都市锦江区东校场街"}, {"name": "余实记食味轩", "address": "成都市东坡北二路529-531号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "103.991485,30.666349", "formatted": "四川省成都市青羊区东坡北二路529-531号"}, {"name": "耀华糖果糕点铺", "address": "成都市光华北二街47号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.023835,30.662460", "formatted": "四川省成都市青羊区光华北二街47号"}, {"name": "全聚苑融合川菜炭火烧烤", "address": "成都市高新区吉泰一街升华路108号1栋1层112-115号", "category": "高新", "icon": "🏙️", "color": "#3498DB", "lnglat": "104.066772,30.549424", "formatted": "成都市高新区吉泰一街升华路108号1栋1层112-115号"}, {"name": "点将台烤郡肝", "address": "成都市一心桥南街8号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.099293,30.643546", "formatted": "成都市一心桥南街8号"}, {"name": "烤江湖(泛悦国际店)", "address": "成都市武侯区科华中路新6号泛悦国际商场7栋1楼103号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.080432,30.614323", "formatted": "成都市武侯区科华中路新6号泛悦国际商场7栋1楼103号"}, {"name": "其味面馆(营康路店)", "address": "成都市营康路7号", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.036517,30.686066", "formatted": "成都市营康路7号"}, {"name": "东乡春台手抓羊肉(总店)", "address": "成都市金琴路163号", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.037403,30.680174", "formatted": "成都市金琴路163号"}, {"name": "鲜味牛肉面(文华路店)", "address": "成都市白果林文华路15号附21号", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.035248,30.674334", "formatted": "成都市白果林文华路15号附21号"}, {"name": "肉池烧Burn Butcher's", "address": "成都市营康路116号附1-2号", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.039848,30.683226", "formatted": "成都市营康路116号附1-2号"}, {"name": "抚琴夜市", "address": "成都市抚琴东巷4号", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.041565,30.677227", "formatted": "成都市抚琴东巷4号"}, {"name": "陈麻婆豆腐(旗舰店)", "address": "成都市青华路10号附10-12号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.03418,30.662743", "formatted": "成都市青华路10号附10-12号"}, {"name": "小马烤肉", "address": "成都市神仙树北路104号至106号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.048116,30.619413", "formatted": "成都市神仙树北路104号至106号"}, {"name": "四华家常菜馆", "address": "成都市古柏西街", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.046805,30.745549", "formatted": "成都市古柏西街"}, {"name": "纯阳馆鱼香排骨面(东二道街店)", "address": "成都市东二道街78号附3号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.057803,30.671799", "formatted": "成都市东二道街78号附3号"}, {"name": "肖家河家常面(江东民居四区店)", "address": "成都市莲桂街2号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.096235,30.635664", "formatted": "成都市莲桂街2号"}, {"name": "枣阁园滴滴自助餐", "address": "成都市帘官公所街7号", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.081092,30.666931", "formatted": "成都市帘官公所街7号"}, {"name": "么怪面", "address": "成都市龙舟东巷49号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.097014,30.625316", "formatted": "成都市龙舟东巷49号"}, {"name": "芙蓉凰花园酒楼", "address": "成都市光华村街66号附7号3-4层", "category": "青羊区", "icon": "🏛️", "color": "#E74C3C", "lnglat": "104.009996,30.66457", "formatted": "成都市光华村街66号附7号3-4层"}, {"name": "桂林钟肥肠", "address": "成都市龙潭总部经济城华实路28号", "category": "成华区", "icon": "🏭", "color": "#8E44AD", "lnglat": "104.183675,30.690225", "formatted": "成都市龙潭总部经济城华实路28号"}, {"name": "土桥回民餐馆", "address": "成都市金科北路166号旁巷子内", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.008007,30.722466", "formatted": "成都市金科北路166号旁巷子内"}, {"name": "太婆家常菜", "address": "成都市永康路辅路与智远大道交叉口东南160米", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "103.966588,30.640931", "formatted": "成都市永康路辅路与智远大道交叉口东南160米"}, {"name": "样样鲜(润禾书苑店)", "address": "成都市华阳龙灯山路一段69号", "category": "双流", "icon": "✈️", "color": "#1ABC9C", "lnglat": "104.061573,30.511293", "formatted": "成都市华阳龙灯山路一段69号"}, {"name": "樊记干捞牛肉面(保利中心店)", "address": "成都市锦绣路12号附1号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.072276,30.625259", "formatted": "成都市锦绣路12号附1号"}, {"name": "秘密据点SecretBase", "address": "成都市恒大中央广场商业楼4层415", "category": "成华区", "icon": "🏭", "color": "#8E44AD", "lnglat": "104.114295,30.658019", "formatted": "成都市恒大中央广场商业楼4层415"}, {"name": "和幸食品(群光广场店)", "address": "成都市锦江区春熙路8号群光广场8楼", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.076886,30.654515", "formatted": "成都市锦江区春熙路8号群光广场8楼"}, {"name": "全聚苑炭火烧烤(牛市口店)", "address": "成都市牛市口路87号附99号", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.108509,30.641798", "formatted": "成都市牛市口路87号附99号"}, {"name": "君乐园烤鸭(平福巷平福巷川旅厂宿舍店)", "address": "成都市平福路15号", "category": "金牛区", "icon": "🐂", "color": "#F39C12", "lnglat": "104.086533,30.684698", "formatted": "成都市平福路15号"}, {"name": "集源江湖菜(双林路店)", "address": "成都市双林中横路42号", "category": "成华区", "icon": "🏭", "color": "#8E44AD", "lnglat": "104.110194,30.651928", "formatted": "成都市双林中横路42号"}, {"name": "武味坊灌汤包", "address": "成都市成华区新鸿路360号", "category": "成华区", "icon": "🏭", "color": "#8E44AD", "lnglat": "104.105448,30.661593", "formatted": "成都市成华区新鸿路360号"}, {"name": "叼嘴撸串(玉林总店)", "address": "成都市武侯区玉林中路19号附1号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "104.058447,30.627028", "formatted": "成都市武侯区玉林中路19号附1号"}, {"name": "豆腐脑花", "address": "成都市簇桥下街156号", "category": "武侯区", "icon": "🌿", "color": "#27AE60", "lnglat": "103.990885,30.599072", "formatted": "成都市簇桥下街156号"}, {"name": "二月二春", "address": "成都市中新街49号附8号1层", "category": "锦江区", "icon": "💧", "color": "#2980B9", "lnglat": "104.075907,30.656941", "formatted": "成都市中新街49号附8号1层"}, {"name": "红光面馆(培华东路15号小区店)", "address": "成都市成华区红光小区二区", "category": "成华区", "icon": "🏭", "color": "#8E44AD", "lnglat": "104.105439,30.666967", "formatted": "成都市成华区红光小区二区"}];</script>
 <script>const NOT_FOUND = [];</script>
 <script>const CATS = [{"id": "青羊区", "icon": "🏛️", "color": "#E74C3C", "label": "青羊区"}, {"id": "武侯区", "icon": "🌿", "color": "#27AE60", "label": "武侯区"}, {"id": "金牛区", "icon": "🐂", "color": "#F39C12", "label": "金牛区"}, {"id": "锦江区", "icon": "💧", "color": "#2980B9", "label": "锦江区"}, {"id": "成华区", "icon": "🏭", "color": "#8E44AD", "label": "成华区"}, {"id": "高新", "icon": "🏙️", "color": "#3498DB", "label": "高新区"}, {"id": "双流", "icon": "✈️", "color": "#1ABC9C", "label": "双流区"}, {"id": "乐山", "icon": "🔥", "color": "#FF4500", "label": "乐山"}];</script>
 <script>
 (function() {
-var map;
-var markers = {};
-var activeCategories = new Set(CATS.map(function(c) { return c.id; }));
-var activeInfoWindow = null;
+  var map;
+  var markers = [];
+  var markerVisible = [];
+  var activeCategories = new Set(CATS.map(function(cat) { return cat.id; }));
+  var activeInfoWindow = null;
+  var activePoiIndex = null;
+  var userPosition = null;
+  var userMarker = null;
+  var accuracyCircle = null;
+  var watchId = null;
+  var nearbyOnly = false;
+  var radiusMeters = 3000;
 
-function init() {
-  map = new AMap.Map('map', {
-    zoom: 12,
-    center: [104.065, 30.657],
-    mapStyle: 'amap://styles/dark',
-    resizeEnable: true,
-    viewMode: '3D'
-  });
+  function coordinates(poi) {
+    return poi.lnglat.split(',').map(Number);
+  }
 
-  POIS.forEach(function(poi, idx) {
-    var parts = poi.lnglat.split(',').map(Number);
-    var marker = new AMap.Marker({
-      position: [parts[0], parts[1]],
-      title: poi.name,
-      icon: new AMap.Icon({
-        size: new AMap.Size(22, 22),
-        imageSize: new AMap.Size(22, 22),
-        image: markerSVG(poi.color)
-      }),
-      offset: new AMap.Pixel(-11, -11),
-      zIndex: 100,
-      extData: { poi: poi, idx: idx }
-    });
-    marker.on('click', onMarkerClick);
-    markers[idx] = marker;
-    marker.setMap(map);
-  });
+  function distanceMeters(a, b) {
+    var rad = Math.PI / 180;
+    var lat1 = a[1] * rad;
+    var lat2 = b[1] * rad;
+    var dLat = (b[1] - a[1]) * rad;
+    var dLng = (b[0] - a[0]) * rad;
+    var h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  }
 
-  document.getElementById('mapStats').textContent = POIS.length + '家精选 · ' + CATS.length + '大区域 · 交互地图';
-  updateCounts();
-  renderPOIList();
-  renderNotFound();
+  function formatDistance(meters) {
+    return meters < 1000 ? Math.round(meters) + ' 米' : (meters / 1000).toFixed(1) + ' 公里';
+  }
 
-  map.on('click', function() {
-    if (window.innerWidth <= 768) {
-      document.getElementById('sidebar').classList.remove('open');
+  function init() {
+    if (!window.AMap) {
+      setStatus('地图加载失败，请刷新页面后重试。', true);
+      return;
     }
-  });
-}
-
-function markerSVG(color) {
-  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="COLOR" stroke="#fff" stroke-width="1.5" opacity="0.9"/><circle cx="11" cy="11" r="4" fill="#fff" opacity="0.3"/></svg>';
-  svg = svg.replace('COLOR', color);
-  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-}
-
-function onMarkerClick(e) {
-  var poi = e.target.getExtData().poi;
-  var parts = poi.lnglat.split(',').map(Number);
-  var lng = parts[0], lat = parts[1];
-
-  if (activeInfoWindow) {
-    map.clearInfoWindow();
-  }
-
-  var addr = poi.formatted || poi.address;
-  var content = '<div class="info-window"><h3>' + poi.icon + ' ' + poi.name + '</h3>';
-  content += '<div style="color:#999;font-size:11px;">' + addr + '</div>';
-  content += '<a class="nav-link" href="javascript:void(0)" onclick="openNav(' + lng + ',' + lat + ',\'' + poi.name.replace(/'/g, "\\'") + '\')">📍 高德导航 →</a>';
-  content += '</div>';
-
-  var infoWindow = new AMap.InfoWindow({
-    content: content,
-    offset: new AMap.Pixel(0, -28),
-    closeWhenClickMap: true
-  });
-  infoWindow.open(map, [lng, lat]);
-  activeInfoWindow = infoWindow;
-
-  map.setCenter([lng, lat]);
-  highlightSidebar(poi.name);
-}
-
-window.openNav = function(lng, lat, name) {
-  var url = 'https://uri.amap.com/navigation?to=' + lng + ',' + lat + ',' + encodeURIComponent(name) + '&mode=car&callnative=1';
-  window.open(url, '_blank');
-};
-
-function renderPOIList(filter) {
-  filter = filter || '';
-  var container = document.getElementById('poiList');
-  var html = '';
-  var lowerFilter = filter.toLowerCase();
-
-  CATS.forEach(function(cat) {
-    var catPois = POIS.filter(function(p) {
-      if (p.category !== cat.id) return false;
-      if (!filter) return true;
-      return p.name.toLowerCase().indexOf(lowerFilter) !== -1;
+    map = new AMap.Map('map', {
+      zoom: 12,
+      center: [104.065, 30.657],
+      mapStyle: 'amap://styles/dark',
+      resizeEnable: true,
+      viewMode: '3D'
     });
-    if (catPois.length === 0 && filter) return;
-    html += '<div class="cat-section" data-cat="' + cat.id + '">';
-    html += '<div class="cat-header">' + cat.icon + ' ' + cat.label + ' (' + catPois.length + ')</div>';
-    catPois.forEach(function(p) {
-      var escapedName = p.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-      html += '<div class="poi-item" data-name="' + p.name.replace(/"/g, '&quot;') + '" onclick="focusPOI(\'' + escapedName + '\')">';
-      html += '<span class="poi-icon">' + p.icon + '</span>';
-      html += '<span class="poi-name">' + p.name + '</span>';
-      html += '</div>';
+
+    POIS.forEach(function(poi, index) {
+      var marker = new AMap.Marker({
+        position: coordinates(poi),
+        title: poi.name,
+        icon: new AMap.Icon({
+          size: new AMap.Size(22, 22),
+          imageSize: new AMap.Size(22, 22),
+          image: markerSVG(poi.color)
+        }),
+        offset: new AMap.Pixel(-11, -11),
+        zIndex: 100,
+        extData: { index: index }
+      });
+      marker.on('click', function() { openPOI(index); });
+      marker.setMap(map);
+      markers[index] = marker;
+      markerVisible[index] = true;
     });
-    html += '</div>';
-  });
 
-  if (!html) html = '<div style="padding:16px;color:#666;font-size:13px;">未找到匹配店铺</div>';
-  container.innerHTML = html;
-}
-
-function renderNotFound() {
-  var section = document.getElementById('notFoundSection');
-  if (NOT_FOUND.length === 0) { section.style.display = 'none'; return; }
-  var html = '<h3>⚠️ 未找到 (' + NOT_FOUND.length + '家)</h3>';
-  NOT_FOUND.forEach(function(nf) {
-    html += '<div class="not-found-item">' + (nf.icon || '') + ' ' + nf.name + ' <span style="color:#555">— ' + nf.reason + '</span></div>';
-  });
-  section.innerHTML = html;
-}
-
-window.focusPOI = function(name) {
-  var poi = POIS.find(function(p) { return p.name === name; });
-  if (!poi) return;
-  var parts = poi.lnglat.split(',').map(Number);
-  map.setCenter([parts[0], parts[1]]);
-  map.setZoom(16);
-  var idx = POIS.indexOf(poi);
-  if (markers[idx]) {
-    markers[idx].emit('click', { target: markers[idx] });
-  }
-};
-
-function highlightSidebar(name) {
-  document.querySelectorAll('.poi-item').forEach(function(el) {
-    if (el.dataset.name === name) {
-      el.classList.add('active');
-    } else {
-      el.classList.remove('active');
-    }
-  });
-}
-
-window.filterPOIs = function() {
-  var val = document.getElementById('searchInput').value;
-  renderPOIList(val);
-};
-
-window.toggleCategory = function(catId) {
-  if (activeCategories.has(catId)) {
-    activeCategories.delete(catId);
-  } else {
-    activeCategories.add(catId);
-  }
-  var item = document.querySelector('.legend-item[data-cat="' + catId + '"]');
-  if (item) {
-    if (activeCategories.has(catId)) {
-      item.classList.remove('disabled');
-    } else {
-      item.classList.add('disabled');
-    }
+    document.getElementById('mapStats').textContent = POIS.length + '家精选 · ' + CATS.length + '大区域 · 交互地图';
+    CATS.forEach(function(cat) {
+      var count = POIS.filter(function(poi) { return poi.category === cat.id; }).length;
+      document.getElementById('count-' + cat.id).textContent = count + '家';
+    });
+    document.querySelectorAll('.legend-item').forEach(function(item) {
+      item.addEventListener('click', function() { toggleCategory(item.dataset.cat); });
+      item.setAttribute('role', 'button');
+      item.setAttribute('tabindex', '0');
+      item.setAttribute('aria-pressed', 'true');
+      item.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          toggleCategory(item.dataset.cat);
+        }
+      });
+    });
+    document.getElementById('searchInput').addEventListener('input', render);
+    document.getElementById('radiusSelect').addEventListener('change', function(event) {
+      radiusMeters = event.target.value === 'all' ? Infinity : Number(event.target.value);
+      render();
+    });
+    document.getElementById('locateBtn').addEventListener('click', activateNearby);
+    document.getElementById('map-locate-btn').addEventListener('click', activateNearby);
+    document.getElementById('stopBtn').addEventListener('click', stopTracking);
+    document.getElementById('allBtn').addEventListener('click', function() { setMode(false); });
+    document.getElementById('nearbyBtn').addEventListener('click', function() { setMode(true); });
+    document.getElementById('toggle-btn').addEventListener('click', function() { toggleSidebar(); });
+    document.getElementById('close-sidebar-btn').addEventListener('click', function() { toggleSidebar(false); });
+    map.on('click', function() {
+      if (window.innerWidth <= 768) toggleSidebar(false);
+    });
+    renderNotFound();
+    render();
   }
 
-  POIS.forEach(function(poi, idx) {
-    if (poi.category === catId) {
-      if (activeCategories.has(catId)) {
-        markers[idx].setMap(map);
-      } else {
-        markers[idx].setMap(null);
+  function markerSVG(color) {
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="COLOR" stroke="#fff" stroke-width="1.5" opacity="0.9"/><circle cx="11" cy="11" r="4" fill="#fff" opacity="0.3"/></svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.replace('COLOR', color));
+  }
+
+  function getVisibleEntries() {
+    var term = document.getElementById('searchInput').value.trim().toLowerCase();
+    var entries = [];
+    POIS.forEach(function(poi, index) {
+      if (!activeCategories.has(poi.category)) return;
+      if (term && !(poi.name + ' ' + poi.address).toLowerCase().includes(term)) return;
+      var distance = userPosition ? distanceMeters(userPosition, coordinates(poi)) : null;
+      if (nearbyOnly && (distance === null || distance > radiusMeters)) return;
+      entries.push({ poi: poi, index: index, distance: distance });
+    });
+    if (nearbyOnly) entries.sort(function(a, b) { return a.distance - b.distance; });
+    return entries;
+  }
+
+  function render() {
+    if (!map) return;
+    var entries = getVisibleEntries();
+    var visible = new Set(entries.map(function(entry) { return entry.index; }));
+    markers.forEach(function(marker, index) {
+      var shouldShow = visible.has(index);
+      if (shouldShow !== markerVisible[index]) {
+        marker.setMap(shouldShow ? map : null);
+        markerVisible[index] = shouldShow;
       }
+    });
+    if (activePoiIndex !== null && !visible.has(activePoiIndex)) {
+      map.clearInfoWindow();
+      activeInfoWindow = null;
+      activePoiIndex = null;
     }
-  });
 
-  if (!activeCategories.has(catId) && activeInfoWindow) {
-    map.clearInfoWindow();
-    activeInfoWindow = null;
+    var list = document.getElementById('poiList');
+    list.replaceChildren();
+    var fragment = document.createDocumentFragment();
+    if (nearbyOnly) {
+      var heading = document.createElement('div');
+      heading.className = 'nearby-heading';
+      heading.textContent = '📍 附近餐馆 · ' + entries.length + '家（按直线距离）';
+      fragment.appendChild(heading);
+      entries.forEach(function(entry) { fragment.appendChild(createListItem(entry, true)); });
+    } else {
+      CATS.forEach(function(cat) {
+        var catEntries = entries.filter(function(entry) { return entry.poi.category === cat.id; });
+        if (!catEntries.length && document.getElementById('searchInput').value.trim()) return;
+        var section = document.createElement('div');
+        section.className = 'cat-section';
+        var heading = document.createElement('div');
+        heading.className = 'cat-header';
+        heading.textContent = cat.icon + ' ' + cat.label + ' (' + catEntries.length + ')';
+        section.appendChild(heading);
+        catEntries.forEach(function(entry) { section.appendChild(createListItem(entry, false)); });
+        fragment.appendChild(section);
+      });
+    }
+    if (!entries.length) {
+      var empty = document.createElement('div');
+      empty.className = 'nearby-heading';
+      empty.textContent = nearbyOnly ? '范围内没有收录餐馆，可扩大查找范围或切换“全部”。' : '没有匹配的餐馆。';
+      fragment.appendChild(empty);
+    }
+    list.appendChild(fragment);
+    if (userPosition) updateLocationStatus(entries.length);
   }
-};
 
-function updateCounts() {
-  CATS.forEach(function(cat) {
-    var count = POIS.filter(function(p) { return p.category === cat.id; }).length;
-    var el = document.getElementById('count-' + cat.id);
-    if (el) el.textContent = count + '家';
-  });
-}
+  function createListItem(entry, showDetail) {
+    var item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'poi-item' + (entry.index === activePoiIndex ? ' active' : '');
+    item.dataset.index = entry.index;
+    var icon = document.createElement('span');
+    icon.className = 'poi-icon';
+    icon.textContent = entry.poi.icon;
+    var name = document.createElement('span');
+    name.className = 'poi-name';
+    name.textContent = entry.poi.name;
+    if (showDetail) {
+      var detail = document.createElement('span');
+      detail.className = 'poi-detail';
+      detail.textContent = entry.poi.category + ' · ' + entry.poi.address;
+      name.appendChild(detail);
+    }
+    item.append(icon, name);
+    if (showDetail && entry.distance !== null) {
+      var distance = document.createElement('span');
+      distance.className = 'poi-distance';
+      distance.textContent = formatDistance(entry.distance);
+      item.appendChild(distance);
+    }
+    item.addEventListener('click', function() {
+      map.setZoom(16);
+      openPOI(entry.index);
+      if (window.innerWidth <= 768) toggleSidebar(false);
+    });
+    return item;
+  }
 
-window.toggleSidebar = function() {
-  document.getElementById('sidebar').classList.toggle('open');
-};
+  function navURL(poi, mode) {
+    var params = new URLSearchParams();
+    params.set('to', poi.lnglat + ',' + poi.name);
+    if (userPosition) params.set('from', userPosition.join(',') + ',我的位置');
+    params.set('mode', mode);
+    params.set('callnative', '1');
+    params.set('src', 'chengdu-food-map');
+    return 'https://uri.amap.com/navigation?' + params.toString();
+  }
 
-document.addEventListener('DOMContentLoaded', init);
+  function openPOI(index) {
+    var poi = POIS[index];
+    var position = coordinates(poi);
+    var content = document.createElement('div');
+    content.className = 'info-window';
+    var title = document.createElement('h3');
+    title.textContent = poi.icon + ' ' + poi.name;
+    var address = document.createElement('div');
+    address.style.cssText = 'color:#aaa;font-size:11px;';
+    address.textContent = poi.formatted || poi.address;
+    content.append(title, address);
+    if (userPosition) {
+      var distance = document.createElement('div');
+      distance.textContent = '距你约 ' + formatDistance(distanceMeters(userPosition, position)) + '（直线距离）';
+      content.appendChild(distance);
+    }
+    [['步行路线', 'walk'], ['驾车路线', 'car']].forEach(function(option) {
+      var link = document.createElement('a');
+      link.className = 'nav-link';
+      link.textContent = option[0];
+      link.href = navURL(poi, option[1]);
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      content.appendChild(link);
+    });
+    if (activeInfoWindow) map.clearInfoWindow();
+    activeInfoWindow = new AMap.InfoWindow({
+      content: content,
+      offset: new AMap.Pixel(0, -28),
+      closeWhenClickMap: true
+    });
+    activeInfoWindow.open(map, position);
+    activePoiIndex = index;
+    map.setCenter(position);
+    document.querySelectorAll('.poi-item').forEach(function(item) {
+      item.classList.toggle('active', Number(item.dataset.index) === index);
+    });
+  }
+
+  function toggleCategory(catId) {
+    if (activeCategories.has(catId)) activeCategories.delete(catId);
+    else activeCategories.add(catId);
+    var item = document.querySelector('.legend-item[data-cat="' + catId + '"]');
+    item.classList.toggle('disabled', !activeCategories.has(catId));
+    item.setAttribute('aria-pressed', String(activeCategories.has(catId)));
+    render();
+  }
+
+  function setMode(isNearby) {
+    if (isNearby && !userPosition) {
+      startTracking();
+      return;
+    }
+    nearbyOnly = isNearby;
+    document.getElementById('allBtn').classList.toggle('active', !isNearby);
+    document.getElementById('nearbyBtn').classList.toggle('active', isNearby);
+    document.getElementById('allBtn').setAttribute('aria-pressed', String(!isNearby));
+    document.getElementById('nearbyBtn').setAttribute('aria-pressed', String(isNearby));
+    render();
+  }
+
+  function setStatus(message, isError) {
+    var status = document.getElementById('locationStatus');
+    status.textContent = message;
+    status.classList.toggle('error', !!isError);
+  }
+
+  function updateLocationStatus(count) {
+    var suffix = watchId === null ? '已暂停实时更新' : '实时定位中';
+    var precision = userPosition.accuracy ? ' · 精度约 ' + formatDistance(userPosition.accuracy) : '';
+    var nearby = nearbyOnly ? ' · 范围内 ' + count + ' 家' : '';
+    setStatus(suffix + precision + nearby + '；距离为直线距离。', false);
+  }
+
+  function activateNearby() {
+    if (window.innerWidth <= 768) toggleSidebar(true);
+    if (userPosition) {
+      setMode(true);
+      centerOnUser();
+    }
+    if (watchId === null) startTracking();
+  }
+
+  function startTracking() {
+    if (!navigator.geolocation) {
+      setStatus('此浏览器不支持定位，请使用支持定位的浏览器。', true);
+      return;
+    }
+    if (watchId !== null) return;
+    setStatus('正在获取位置，请允许浏览器访问定位…', false);
+    document.getElementById('locateBtn').textContent = '📍 正在定位…';
+    watchId = navigator.geolocation.watchPosition(onPosition, onLocationError, {
+      enableHighAccuracy: true,
+      maximumAge: 10000,
+      timeout: 20000
+    });
+    document.getElementById('stopBtn').hidden = false;
+  }
+
+  function onPosition(position) {
+    var gps = [position.coords.longitude, position.coords.latitude];
+    AMap.convertFrom(gps, 'gps', function(status, result) {
+      if (status !== 'complete' || !result.locations || !result.locations.length) {
+        setStatus('获取到位置，但地图坐标转换失败。请稍后重试。', true);
+        return;
+      }
+      var converted = result.locations[0];
+      var firstFix = userPosition === null;
+      userPosition = [converted.getLng(), converted.getLat()];
+      userPosition.accuracy = position.coords.accuracy;
+      updateUserMarker();
+      document.getElementById('nearbyBtn').disabled = false;
+      document.getElementById('locateBtn').textContent = '🎯 回到我的位置';
+      if (firstFix) {
+        setMode(true);
+        centerOnUser();
+      } else {
+        render();
+      }
+    });
+  }
+
+  function updateUserMarker() {
+    if (!userMarker) {
+      userMarker = new AMap.Marker({
+        position: userPosition,
+        content: '<div class="user-position-dot" title="我的位置"></div>',
+        offset: new AMap.Pixel(-9, -9),
+        zIndex: 1000
+      });
+      userMarker.setMap(map);
+    } else {
+      userMarker.setPosition(userPosition);
+    }
+    if (accuracyCircle) accuracyCircle.setMap(null);
+    if (userPosition.accuracy && userPosition.accuracy <= 3000) {
+      accuracyCircle = new AMap.Circle({
+        center: userPosition,
+        radius: userPosition.accuracy,
+        strokeColor: '#1689e8',
+        strokeOpacity: 0.6,
+        strokeWeight: 1,
+        fillColor: '#1689e8',
+        fillOpacity: 0.08,
+        zIndex: 20
+      });
+      accuracyCircle.setMap(map);
+    }
+  }
+
+  function centerOnUser() {
+    if (!userPosition) return;
+    map.setZoom(15);
+    map.setCenter(userPosition);
+  }
+
+  function onLocationError(error) {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    document.getElementById('stopBtn').hidden = true;
+    document.getElementById('locateBtn').textContent = userPosition ? '📍 重新定位' : '📍 定位并找附近';
+    var messages = {
+      1: '定位权限被拒绝，请在浏览器设置中允许此网站访问位置后重试。',
+      2: '暂时无法获取位置，请检查设备定位服务和网络后重试。',
+      3: '定位超时，请重试。'
+    };
+    setStatus(messages[error.code] || '定位失败，请重试。', true);
+  }
+
+  function stopTracking() {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    document.getElementById('stopBtn').hidden = true;
+    document.getElementById('locateBtn').textContent = '📍 继续实时定位';
+    if (userPosition) render();
+  }
+
+  function toggleSidebar(force) {
+    var sidebar = document.getElementById('sidebar');
+    sidebar.classList.toggle('open', typeof force === 'boolean' ? force : !sidebar.classList.contains('open'));
+    document.getElementById('toggle-btn').setAttribute('aria-expanded', String(sidebar.classList.contains('open')));
+  }
+
+  function renderNotFound() {
+    var section = document.getElementById('notFoundSection');
+    if (!NOT_FOUND.length) {
+      section.style.display = 'none';
+      return;
+    }
+    var heading = document.createElement('h3');
+    heading.textContent = '⚠️ 未找到 (' + NOT_FOUND.length + '家)';
+    section.appendChild(heading);
+    NOT_FOUND.forEach(function(poi) {
+      var item = document.createElement('div');
+      item.className = 'not-found-item';
+      item.textContent = (poi.icon || '') + ' ' + poi.name + ' — ' + poi.reason;
+      section.appendChild(item);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
 })();
 </script>
 </body>
